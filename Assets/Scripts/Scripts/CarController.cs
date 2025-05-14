@@ -2,83 +2,69 @@ using UnityEngine;
 using UnityEngine.Tilemaps;
 using System.Collections.Generic;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class CarController : MonoBehaviour
 {
-    [Header("Movement Settings")]
+    [Header("Settings")]
     public float speed = 2f;
     public float rotationSpeed = 5f;
-    public float decisionDistance = 0.1f;
-
-    [Header("References")]
     public Tilemap roadTilemap;
 
+    [Header("Debug")]
+    public bool showDebug = true;
+
     private Vector2 currentDirection = Vector2.right;
-    private Vector3Int lastTilePosition;
-    private bool isOnRoad = true;
+    private Rigidbody2D rb;
 
     void Start()
     {
-        lastTilePosition = roadTilemap.WorldToCell(transform.position);
+        rb = GetComponent<Rigidbody2D>();
         SnapToGrid();
     }
 
     void Update()
     {
-        if (!isOnRoad) return;
-
-        Vector3Int currentTilePos = roadTilemap.WorldToCell(transform.position);
-        if (currentTilePos != lastTilePosition || ShouldMakeDecision())
-        {
-            CheckRoadTile(currentTilePos);
-            lastTilePosition = currentTilePos;
-        }
-
         MoveCar();
-        RotateCar();
+        CheckCurrentTile();
     }
 
     void MoveCar()
     {
-        transform.position += (Vector3)currentDirection * speed * Time.deltaTime;
+        rb.velocity = currentDirection * speed;
+        RotateCar();
     }
 
     void RotateCar()
     {
         float targetAngle = Mathf.Atan2(currentDirection.y, currentDirection.x) * Mathf.Rad2Deg;
-        Quaternion targetRotation = Quaternion.Euler(0, 0, targetAngle);
-        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        transform.rotation = Quaternion.Lerp(transform.rotation,
+            Quaternion.Euler(0, 0, targetAngle),
+            rotationSpeed * Time.deltaTime);
     }
 
-    bool ShouldMakeDecision()
+    void CheckCurrentTile()
     {
-        Vector3 cellCenter = roadTilemap.GetCellCenterWorld(lastTilePosition);
-        return Vector3.Distance(transform.position, cellCenter) < decisionDistance;
-    }
+        Vector3Int cellPos = roadTilemap.WorldToCell(transform.position);
+        RoadTile currentTile = roadTilemap.GetTile<RoadTile>(cellPos);
 
-    void CheckRoadTile(Vector3Int tilePos)
-    {
-        RoadTile tile = roadTilemap.GetTile<RoadTile>(tilePos);
-
-        if (tile == null)
+        if (currentTile == null || !IsDirectionAllowed(currentTile))
         {
-            isOnRoad = false;
-            speed = 0f;
-            return;
-        }
-
-        // Conversia la Vector2Int pentru verificare
-        Vector2Int currentDirInt = new Vector2Int(
-            Mathf.RoundToInt(currentDirection.x),
-            Mathf.RoundToInt(currentDirection.y));
-
-        if (!tile.AllowsDirection(currentDirInt))
-        {
-            ChooseNewDirection(tile);
+            ChangeDirection(currentTile);
             SnapToGrid();
         }
+
+        Debug.Log($"Current Tile: {roadTilemap.GetTile<RoadTile>(cellPos).name} | Direction: {currentDirection}");
     }
 
-    void ChooseNewDirection(RoadTile tile)
+    bool IsDirectionAllowed(RoadTile tile)
+    {
+        return (currentDirection == Vector2.up && tile.allowNorth) ||
+               (currentDirection == Vector2.down && tile.allowSouth) ||
+               (currentDirection == Vector2.right && tile.allowEast) ||
+               (currentDirection == Vector2.left && tile.allowWest);
+    }
+
+    void ChangeDirection(RoadTile tile)
     {
         List<Vector2> possibleDirections = new List<Vector2>();
 
@@ -87,37 +73,36 @@ public class CarController : MonoBehaviour
         if (tile.allowEast) possibleDirections.Add(Vector2.right);
         if (tile.allowWest) possibleDirections.Add(Vector2.left);
 
-        // Convertim direcția curentă la Vector2 pentru comparație
-        Vector2 oppositeDirection = -currentDirection;
-        possibleDirections.RemoveAll(dir => Vector2.Dot(dir, oppositeDirection) > 0.9f);
+        // Remove opposite direction
+        possibleDirections.RemoveAll(dir => dir == -currentDirection);
 
         if (possibleDirections.Count > 0)
         {
-            currentDirection = possibleDirections[Random.Range(0, possibleDirections.Count)].normalized;
+            currentDirection = possibleDirections[Random.Range(0, possibleDirections.Count)];
         }
         else
         {
-            isOnRoad = false;
-            speed = 0f;
+            Destroy(gameObject);
         }
     }
 
     void SnapToGrid()
     {
         Vector3Int cellPos = roadTilemap.WorldToCell(transform.position);
-        Vector3 cellCenter = roadTilemap.GetCellCenterWorld(cellPos);
-        transform.position = new Vector3(cellCenter.x, cellCenter.y, transform.position.z);
+        transform.position = roadTilemap.GetCellCenterWorld(cellPos);
     }
 
-    // Adaugă acest cod temporar în CarController pentru debug
     void OnDrawGizmos()
     {
-        if (!Application.isPlaying) return;
+        if (!showDebug) return;
 
-        Vector3Int cellPos = roadTilemap.WorldToCell(transform.position);
-        RoadTile tile = roadTilemap.GetTile<RoadTile>(cellPos);
+        Gizmos.color = Color.red;
+        Gizmos.DrawLine(transform.position, transform.position + (Vector3)currentDirection * 0.5f);
 
-        Gizmos.color = tile != null ? Color.green : Color.red;
-        Gizmos.DrawWireCube(roadTilemap.GetCellCenterWorld(cellPos), Vector3.one * 0.9f);
+        if (roadTilemap != null)
+        {
+            Vector3Int cell = roadTilemap.WorldToCell(transform.position);
+            Gizmos.DrawWireCube(roadTilemap.GetCellCenterWorld(cell), Vector3.one * 0.9f);
+        }
     }
 }
