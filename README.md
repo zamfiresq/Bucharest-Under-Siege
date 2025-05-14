@@ -1,4 +1,4 @@
-# Bucharest Streets
+# Bucharest Under Siege
 *A Top-Down RPG (Role-playing game) in 2D format, made in Unity*
 
 ## Team Members
